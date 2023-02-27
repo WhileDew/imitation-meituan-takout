@@ -1,24 +1,17 @@
 package com.example.ruijiwaimai;
 
-import cn.hutool.json.JSONArray;
-import cn.hutool.json.JSONUtil;
-import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.OrderItem;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.example.ruijiwaimai.constans.RedisConstants;
-import com.example.ruijiwaimai.dto.DishDto;
 import com.example.ruijiwaimai.entity.Dish;
 import com.example.ruijiwaimai.entity.User;
 import com.example.ruijiwaimai.service.IDishService;
 import com.example.ruijiwaimai.service.IEmployeeService;
 import com.example.ruijiwaimai.service.impl.UserServiceImpl;
-import com.example.ruijiwaimai.utils.Result;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.data.redis.core.StringRedisTemplate;
 
 import javax.annotation.Resource;
-import java.util.Set;
 
 @SpringBootTest
 class RuijiwaimaiApplicationTests {
@@ -28,9 +21,6 @@ class RuijiwaimaiApplicationTests {
 
     @Resource
     private IDishService dishService;
-
-    @Resource
-    private StringRedisTemplate stringRedisTemplate;
 
     @Test
     void contextLoads() {
@@ -69,11 +59,5 @@ class RuijiwaimaiApplicationTests {
         user.setStatus(1);
         UserServiceImpl userService = new UserServiceImpl();
         userService.updateById(user);
-    }
-
-    @Test
-    void test() {
-        Set<String> keys = stringRedisTemplate.keys(RedisConstants.CACHE_DISHDTO_KEY + "*");
-        stringRedisTemplate.delete(keys);
     }
 }

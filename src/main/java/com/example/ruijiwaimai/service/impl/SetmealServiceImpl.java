@@ -161,6 +161,7 @@ public class SetmealServiceImpl extends ServiceImpl<SetmealMapper, Setmeal> impl
 
     @Override
     public Result getSetmealList(Long categoryId, Integer type) {
+
         // 获取setmealId
         List<Long> setmealId = query()
                 .eq(type != null, "status", type)
