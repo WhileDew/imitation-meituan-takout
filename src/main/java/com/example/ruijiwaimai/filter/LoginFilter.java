@@ -30,6 +30,7 @@ public class LoginFilter implements Filter{
         String requestURI = request.getRequestURI();// /backend/index.html
         //定义不需要处理的请求路径
         String[] urls = new String[]{
+                "/backend/**",
                 "/backend/page/login.html",
                 "/employee/page",
                 "/employee/login",
