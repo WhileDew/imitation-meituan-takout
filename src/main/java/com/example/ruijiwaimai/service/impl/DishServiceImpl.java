@@ -1,10 +1,13 @@
 package com.example.ruijiwaimai.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.json.JSONArray;
+import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.example.ruijiwaimai.constans.RedisConstants;
 import com.example.ruijiwaimai.dto.DishDto;
 import com.example.ruijiwaimai.entity.Category;
 import com.example.ruijiwaimai.entity.Dish;
@@ -14,12 +17,14 @@ import com.example.ruijiwaimai.service.ICategoryService;
 import com.example.ruijiwaimai.service.IDishFlavorService;
 import com.example.ruijiwaimai.service.IDishService;
 import com.example.ruijiwaimai.utils.Result;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -30,6 +35,9 @@ public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements ID
 
     @Resource
     private ICategoryService categoryService;
+
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
 
     @Override
     public Result getPages(Integer current, Integer pageSize, String name) {
@@ -68,6 +76,9 @@ public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements ID
             log.error("保存失败");
             return Result.error("保存失败");
         }
+        // 更新缓存
+        Long categoryId = dish.getCategoryId();
+        stringRedisTemplate.delete(RedisConstants.CACHE_DISHDTO_KEY + categoryId);
         return Result.success("保存成功");
     }
 
@@ -91,6 +102,10 @@ public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements ID
                 return Result.error("删除错误");
             }
         }
+        // 更新缓存
+        Set<String> keys = stringRedisTemplate.keys(RedisConstants.CACHE_DISHDTO_KEY + "*");
+        assert keys != null;
+        stringRedisTemplate.delete(keys);
         return Result.success("删除成功");
     }
 
@@ -115,6 +130,10 @@ public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements ID
                 return Result.error("更新状态错误");
             }
         }
+        // 更新缓存
+        Set<String> keys = stringRedisTemplate.keys(RedisConstants.CACHE_DISHDTO_KEY + "*");
+        assert keys != null;
+        stringRedisTemplate.delete(keys);
         return Result.success("更新状态成功");
     }
 
@@ -152,15 +171,30 @@ public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements ID
         });
         log.error(dishDto.getFlavors().toString());
         dishFlavorService.saveBatch(flavors);
+        // 更新缓存
+        Long categoryId = dishDto.getCategoryId();
+        stringRedisTemplate.delete(RedisConstants.CACHE_DISHDTO_KEY + categoryId);
         return Result.success("插入成功");
     }
 
     @Override
     public Result getList(Long categoryId) {
+        if (categoryId == null){
+            return Result.error("查询错误");
+        }
+        // redis中查询
+        String key = RedisConstants.CACHE_DISHDTO_KEY + categoryId;
+        String cache = stringRedisTemplate.opsForValue().get(key);
+        if (cache != null){
+            // 转换为json数组
+            JSONArray jsonArray = JSONUtil.parseArray(cache);
+            List<DishDto> dishDtoList = jsonArray.toList(DishDto.class);
+            return Result.success(dishDtoList);
+        }
         ArrayList<DishDto> dishDtoList = new ArrayList<>();
         // 按照分类查询菜品
         // 查询dish口味
-        query().eq(categoryId != null, "category_id", categoryId).list()
+        query().eq("status", 1).eq( "category_id", categoryId).list()
                 .forEach(dish -> {
                     DishDto dishDto = BeanUtil.copyProperties(dish, DishDto.class, "");
                     dishDto.setFlavors(dishFlavorService.query().eq("dish_id", dish.getId()).list());
@@ -169,6 +203,8 @@ public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements ID
         if (dishDtoList.isEmpty()){
             return Result.error("该分类暂时还没有菜品");
         }
+        // 缓存到redis中,5分钟
+        stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(dishDtoList), RedisConstants.CACHE_KEY_TTL, RedisConstants.CACHE_KEY_TIMEUNIT);
         return Result.success(dishDtoList);
     }
 }
