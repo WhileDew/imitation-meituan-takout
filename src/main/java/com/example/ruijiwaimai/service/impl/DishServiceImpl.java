@@ -9,7 +9,6 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.ruijiwaimai.constans.RedisConstants;
 import com.example.ruijiwaimai.dto.DishDto;
-import com.example.ruijiwaimai.entity.Category;
 import com.example.ruijiwaimai.entity.Dish;
 import com.example.ruijiwaimai.entity.DishFlavor;
 import com.example.ruijiwaimai.mapper.DishMapper;
@@ -17,6 +16,7 @@ import com.example.ruijiwaimai.service.ICategoryService;
 import com.example.ruijiwaimai.service.IDishFlavorService;
 import com.example.ruijiwaimai.service.IDishService;
 import com.example.ruijiwaimai.utils.Result;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -27,8 +27,13 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static com.example.ruijiwaimai.constans.RabbitMQConstants.*;
+
 @Service
 public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements IDishService {
+
+    @Resource
+    private RabbitTemplate rabbitTemplate;
 
     @Resource
     private IDishFlavorService dishFlavorService;
@@ -76,9 +81,11 @@ public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements ID
             log.error("保存失败");
             return Result.error("保存失败");
         }
-        // 更新缓存
         Long categoryId = dish.getCategoryId();
-        stringRedisTemplate.delete(RedisConstants.CACHE_DISHDTO_KEY + categoryId);
+        // 存入消息队列
+        log.error("新增");
+        rabbitTemplate.convertAndSend(DISH_EXCHANGE_KEY, DISH_INSERT_KEY, categoryId);
+
         return Result.success("保存成功");
     }
 
@@ -102,10 +109,8 @@ public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements ID
                 return Result.error("删除错误");
             }
         }
-        // 更新缓存
-        Set<String> keys = stringRedisTemplate.keys(RedisConstants.CACHE_DISHDTO_KEY + "*");
-        assert keys != null;
-        stringRedisTemplate.delete(keys);
+        // 存入消息队列
+        rabbitTemplate.convertAndSend(DISH_EXCHANGE_KEY, DISH_INSERT_KEY);
         return Result.success("删除成功");
     }
 
@@ -130,10 +135,9 @@ public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements ID
                 return Result.error("更新状态错误");
             }
         }
-        // 更新缓存
-        Set<String> keys = stringRedisTemplate.keys(RedisConstants.CACHE_DISHDTO_KEY + "*");
-        assert keys != null;
-        stringRedisTemplate.delete(keys);
+        log.error("修改");
+        // 存入消息队列
+        rabbitTemplate.convertAndSend(DISH_EXCHANGE_KEY, DISH_DELETE_KEY);
         return Result.success("更新状态成功");
     }
 
@@ -173,7 +177,8 @@ public class DishServiceImpl extends ServiceImpl<DishMapper, Dish> implements ID
         dishFlavorService.saveBatch(flavors);
         // 更新缓存
         Long categoryId = dishDto.getCategoryId();
-        stringRedisTemplate.delete(RedisConstants.CACHE_DISHDTO_KEY + categoryId);
+        // 存入消息队列
+        rabbitTemplate.convertAndSend(DISH_EXCHANGE_KEY, DISH_INSERT_KEY, categoryId);
         return Result.success("插入成功");
     }
 

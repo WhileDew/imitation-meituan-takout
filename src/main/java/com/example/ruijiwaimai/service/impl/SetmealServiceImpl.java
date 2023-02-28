@@ -1,25 +1,28 @@
 package com.example.ruijiwaimai.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.json.JSONArray;
+import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.example.ruijiwaimai.dto.DishDto;
+import com.example.ruijiwaimai.constans.RedisConstants;
 import com.example.ruijiwaimai.dto.SetmealDto;
 import com.example.ruijiwaimai.entity.Dish;
-import com.example.ruijiwaimai.entity.DishFlavor;
 import com.example.ruijiwaimai.entity.Setmeal;
 import com.example.ruijiwaimai.entity.SetmealDish;
 import com.example.ruijiwaimai.mapper.SetmealMapper;
 import com.example.ruijiwaimai.service.*;
 import com.example.ruijiwaimai.utils.Result;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 
@@ -36,7 +39,7 @@ public class SetmealServiceImpl extends ServiceImpl<SetmealMapper, Setmeal> impl
     private IDishService dishService;
 
     @Resource
-    private IDishFlavorService dishFlavorService;
+    private StringRedisTemplate stringRedisTemplate;
 
     @Override
     public Result getPages(Integer current, Integer pageSize, String name) {
@@ -75,6 +78,9 @@ public class SetmealServiceImpl extends ServiceImpl<SetmealMapper, Setmeal> impl
             log.error("保存失败");
             return Result.error("保存失败");
         }
+        // 更新缓存
+        Long categoryId = setmeal.getCategoryId();
+        stringRedisTemplate.delete(RedisConstants.CACHE_SETMEALDTO_KEY + categoryId);
         return Result.success("保存成功");
     }
 
@@ -98,6 +104,10 @@ public class SetmealServiceImpl extends ServiceImpl<SetmealMapper, Setmeal> impl
                 return Result.error("删除错误");
             }
         }
+        // 更新缓存
+        Set<String> keys = stringRedisTemplate.keys(RedisConstants.CACHE_SETMEALDTO_KEY + "*");
+        assert keys != null;
+        stringRedisTemplate.delete(keys);
         return Result.success("删除成功");
     }
 
@@ -135,6 +145,10 @@ public class SetmealServiceImpl extends ServiceImpl<SetmealMapper, Setmeal> impl
                 return Result.error("更新状态错误");
             }
         }
+        // 更新缓存
+        Set<String> keys = stringRedisTemplate.keys(RedisConstants.CACHE_SETMEALDTO_KEY + "*");
+        assert keys != null;
+        stringRedisTemplate.delete(keys);
         return Result.success("更新状态成功");
     }
 
@@ -156,16 +170,31 @@ public class SetmealServiceImpl extends ServiceImpl<SetmealMapper, Setmeal> impl
         List<SetmealDish> setmealDishes = setmealDto.getSetmealDishes();
         setmealDishes.forEach(s -> s.setSetmealId(setmealId));
         setmealDishService.saveBatch(setmealDishes);
+        // 更新缓存
+        Long categoryId = setmealDto.getCategoryId();
+        stringRedisTemplate.delete(RedisConstants.CACHE_SETMEALDTO_KEY + categoryId);
         return Result.success("插入成功");
     }
 
     @Override
     public Result getSetmealList(Long categoryId, Integer type) {
-
+        if (categoryId == null){
+            return Result.error("查询错误");
+        }
+        // redis中查询
+        String key = RedisConstants.CACHE_SETMEALDTO_KEY + categoryId;
+        String cache = stringRedisTemplate.opsForValue().get(key);
+        if (cache != null){
+            // 转换为json数组
+            JSONArray jsonArray = JSONUtil.parseArray(cache);
+            List<SetmealDto> setmealDtoList = jsonArray.toList(SetmealDto.class);
+            return Result.success(setmealDtoList);
+        }
+        // 没有缓存
         // 获取setmealId
         List<Long> setmealId = query()
                 .eq(type != null, "status", type)
-                .eq(categoryId != null, "category_id", categoryId)
+                .eq("category_id", categoryId)
                 .list().stream().map(Setmeal::getId).collect(Collectors.toList());
         List<SetmealDto> setmealDtos = new ArrayList<>();
         // 查询套餐
@@ -180,6 +209,8 @@ public class SetmealServiceImpl extends ServiceImpl<SetmealMapper, Setmeal> impl
         if (setmealDtos.isEmpty()){
             return Result.error("查询错误");
         }
+        // 缓存到redis中
+        stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(setmealDtos), RedisConstants.CACHE_KEY_TTL, RedisConstants.CACHE_KEY_TIMEUNIT);
         return Result.success(setmealDtos);
     }
 

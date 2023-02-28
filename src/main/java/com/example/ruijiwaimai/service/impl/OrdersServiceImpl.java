@@ -46,31 +46,12 @@ public class OrdersServiceImpl extends ServiceImpl<OrdersMapper, Orders> impleme
         // 判断number是否存在
         LambdaQueryWrapper<Orders> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper
-                .eq(number != null, Orders::getNumber, number)
-                .between(Orders::getOrderTime, beginTime, endTime);
+                .like(number != null, Orders::getNumber, number)
+                .between((beginTime != null && endTime != null), Orders::getOrderTime, beginTime, endTime);
         // 分页
         Page<Orders> page = page(new Page<>(current, pageSize), queryWrapper);
-        // 获取当前页数据
-        Page<OrdersDto> ordersDtoPage = new Page<>();
-        BeanUtil.copyProperties(page, ordersDtoPage, "records");
-        // 将orders转换为dto对象
-        List<OrdersDto> ordersDtoList = page.getRecords().stream().map(
-                item -> {
-                    OrdersDto ordersDto = new OrdersDto();
-                    BeanUtil.copyProperties(item, ordersDto);
-                    // 设置用户名
-                    String username = userService.getById(item.getUserName()).getName();
-                    ordersDto.setUserName(username);
-                    // 设置
-                    List<OrderDetail> orderDetails = orderDetailService.query().eq("order_id", item.getId()).list();
-                    ordersDto.setOrderDetails(orderDetails);
-                    return ordersDto;
-                }
-        ).collect(Collectors.toList());
-        // 设置dto属性
-        ordersDtoPage.setRecords(ordersDtoList);
         page.setTotal(list().size());
-        return Result.success(ordersDtoPage);
+        return Result.success(page);
     }
 
     @Override
